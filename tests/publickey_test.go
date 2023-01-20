@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/starkbank/ecdsa-go/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/privatekey"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/publickey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/privatekey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
 )
 
 func TestPublicKeyPemConversion(t *testing.T) {

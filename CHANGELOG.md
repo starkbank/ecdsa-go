@@ -11,6 +11,9 @@ Given a version number MAJOR.MINOR.PATCH, increment:
 - MINOR version when **breaking changes** are introduced OR **new functionalities** are added in a backwards compatible manner;
 - PATCH version when backwards compatible bug **fixes** are implemented.
 
+## [2.0.0] - 2023-01-20
+### Added
+- Official release
 
 ## [0.1.0] - 2022-03-18
 ### Added

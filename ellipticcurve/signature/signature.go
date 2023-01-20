@@ -3,7 +3,7 @@ package signature
 import (
 	"math/big"
 
-	"github.com/starkbank/ecdsa-go/ellipticcurve/utils"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/utils"
 )
 
 type Signature struct {

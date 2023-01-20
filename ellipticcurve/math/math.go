@@ -3,7 +3,7 @@ package math
 import (
 	"math/big"
 
-	"github.com/starkbank/ecdsa-go/ellipticcurve/point"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/point"
 )
 
 type Mather interface {

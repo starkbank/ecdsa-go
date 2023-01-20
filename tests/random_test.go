@@ -3,11 +3,11 @@ package tests
 import (
 	"testing"
 
-	"github.com/starkbank/ecdsa-go/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/ecdsa"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/privatekey"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/publickey"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/signature"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/ecdsa"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/privatekey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/signature"
 )
 
 func TestMany(t *testing.T) {

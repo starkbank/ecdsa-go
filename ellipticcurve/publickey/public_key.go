@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/starkbank/ecdsa-go/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/math"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/point"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/utils"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/math"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/point"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/utils"
 )
 
 type PublicKey struct {
