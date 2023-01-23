@@ -10,7 +10,7 @@ This is a pure Golang implementation of the Elliptic Curve Digital Signature Alg
 To install StarkBank`s ECDSA-Go, run:
 
 ```sh
-go get github.com/starkbank/ecdsa-go
+go get github.com/starkbank/ecdsa-go/v2
 ```
 
 ### Curves
@@ -34,8 +34,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/ecdsa"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/privatekey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/ecdsa"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/privatekey"
 )
 
 func main() {
@@ -72,6 +72,7 @@ RmpeRREXj5aog/Mq8RrdYy75W9q/Ig==
 
 	fmt.Println(ecdsa.Verify(message, signature, &publicKey))
 }
+
 ```
 
 Simple use:
@@ -81,27 +82,27 @@ package main
 
 import (
 	"fmt"
-	"math/big"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/ecdsa"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/privatekey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/ecdsa"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/privatekey"
 )
 
 func main() {
-  	// Generate new Keys
+	// Generate new Keys
 	privateKey := privatekey.New(curve.secp256k1)
 	publicKey := privateKey.PublicKey()
 
 	message := "My test message"
 
-  	// Generate Signature
+	// Generate Signature
 	signer := ecdsa.Sign(message, &privateKey)
 	fmt.Println(signer.ToBase64())
 
-  	// To verify if the signature is valid
+	// To verify if the signature is valid
 	verifer := ecdsa.Verify(message, signer, &publicKey)
 	fmt.Println(verifer)
 }
+
 ```
 
 ### OpenSSL
@@ -126,10 +127,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/ecdsa"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/signature"
 	"os"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/ecdsa"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/publickey"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/signature"
 )
 
 func main() {
@@ -142,6 +143,7 @@ func main() {
 
 	fmt.Println(ecdsa.Verify(string(message), signature, &publicKey))
 }
+
 ```
 
 You can also verify it on terminal:
@@ -163,8 +165,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/signature"
 	"os"
-	"github.com/starkbank/ecdsa-go/ellipticcurve/signature"
 )
 
 func main() {
@@ -174,6 +176,7 @@ func main() {
 
 	fmt.Println(signature.ToBase64())
 }
+
 ```
 
 [Stark Bank]: https://starkbank.com
