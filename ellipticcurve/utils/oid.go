@@ -16,7 +16,7 @@ func OidFromHex(hexadecimal string) []int64 {
 		remainingBytes = remainingBytes[2:]
 		byteInt := int64(IntFromHex(bt).Uint64())
 		if byteInt >= 128 {
-			oidInt = byteInt - 128
+			oidInt = (128 * oidInt) + (byteInt - 128)
 			continue
 		}
 		oidInt = oidInt*128 + byteInt

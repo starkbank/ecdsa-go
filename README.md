@@ -1,13 +1,23 @@
-# ecdsa-go
-## A lightweight and fast pure Go ECDSA library
+## A lightweight and fast pure Go ECDSA
 
 ### Overview
 
-This is a pure Golang implementation of the Elliptic Curve Digital Signature Algorithm. It is compatible with OpenSSL and uses elegant math such as Jacobian Coordinates to speed up the ECDSA on pure Golang.
+This is a pure Go implementation of the Elliptic Curve Digital Signature Algorithm. It is compatible with OpenSSL and uses elegant math such as Jacobian Coordinates to speed up the ECDSA on pure Go.
+
+### Security
+
+starkbank-ecdsa includes the following security features:
+
+- **RFC 6979 deterministic nonces**: Eliminates the catastrophic risk of nonce reuse that leaks private keys
+- **Low-S signature normalization**: Prevents signature malleability (BIP-62)
+- **Public key on-curve validation**: Blocks invalid-curve attacks during verification
+- **Montgomery ladder scalar multiplication**: Constant-operation point multiplication to mitigate timing side channels
+- **Hash truncation**: Correctly handles hash functions larger than the curve order (e.g. SHA-512 with secp256k1)
+- **Fermat's little theorem for modular inverse**: More uniform execution time than the extended Euclidean algorithm
 
 ### Installation
 
-To install StarkBank`s ECDSA-Go, run:
+To install StarkBank's ECDSA-Go, run:
 
 ```sh
 go get github.com/starkbank/ecdsa-go/v2
@@ -15,15 +25,17 @@ go get github.com/starkbank/ecdsa-go/v2
 
 ### Curves
 
-We currently support `secp256k1`, but it's super easy to add more curves to the project. Just add them on `curve.go`
+We currently support `secp256k1` and `prime256v1` (P-256), but you can add more curves to the project. You just need to use the `curve.Add()` function.
 
 ### Speed
 
-We ran a test on a Macbook Pro M1 2020. The libraries were run 100 times and the averages displayed bellow were obtained:
+We ran a test on Go 1.26.2 on a MAC Pro. The libraries were run 100 times and the averages displayed below were obtained:
 
 | Library            | sign           | verify   |
 | ------------------ |:--------------:| --------:|
-| starkbank/ecdsa-go |     1.40ms     |  2.90ms  |
+| starkbank/ecdsa-go |     1.7ms      |  1.2ms   |
+
+Our library uses Jacobian Coordinates, a Montgomery ladder for constant-time scalar multiplication, and Shamir's trick for fast signature verification.
 
 ### Sample Code
 
@@ -89,20 +101,94 @@ import (
 
 func main() {
 	// Generate new Keys
-	privateKey := privatekey.New(curve.secp256k1)
+	privateKey := privatekey.New(curve.Secp256k1)
 	publicKey := privateKey.PublicKey()
 
 	message := "My test message"
 
 	// Generate Signature
-	signer := ecdsa.Sign(message, &privateKey)
-	fmt.Println(signer.ToBase64())
+	signature := ecdsa.Sign(message, &privateKey)
+	fmt.Println(signature.ToBase64())
 
 	// To verify if the signature is valid
-	verifer := ecdsa.Verify(message, signer, &publicKey)
-	fmt.Println(verifer)
+	fmt.Println(ecdsa.Verify(message, signature, &publicKey))
 }
 
+```
+
+How to add more curves:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
+)
+
+func main() {
+	newCurve := curve.New(
+		"frp256v1",
+		"0xf1fd178c0b3ad58f10126de8ce42435b3961adbcabc8ca6de8fcf353d86e9c00",
+		"0xee353fca5428a9300d4aba754a44c00fdfec0c9ae4b1a1803075ed967b7bb73f",
+		"0xf1fd178c0b3ad58f10126de8ce42435b3961adbcabc8ca6de8fcf353d86e9c03",
+		"0xf1fd178c0b3ad58f10126de8ce42435b53dc67e140d2bf941ffdd459c6d655e1",
+		"0xb6b3d4c356c139eb31183d4749d423958c27d2dcaf98b70164c97a2dd98f5cff",
+		"0x6142e0f7c8b204911f9271f0f3ecef8c2701c307e8e4c9e183115a1554062cfb",
+		[]int64{1, 2, 250, 1, 223, 101, 256, 1},
+		"",
+	)
+
+	curve.Add(newCurve)
+
+	publicKeyPem := `-----BEGIN PUBLIC KEY-----
+MFswFQYHKoZIzj0CAQYKKoF6AYFfZYIAAQNCAATeEFFYiQL+HmDYTf+QDmvQmWGD
+dRJPqLj11do8okvkSxq2lwB6Ct4aITMlCyg3f1msafc/ROSN/Vgj69bDhZK6
+-----END PUBLIC KEY-----`
+
+	publicKey := publickey.FromPem(publicKeyPem)
+
+	fmt.Println(publicKey.ToPem())
+}
+```
+
+How to generate compressed public key:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/privatekey"
+)
+
+func main() {
+	privateKey := privatekey.New(curve.Secp256k1)
+	publicKey := privateKey.PublicKey()
+	compressedPublicKey := publicKey.ToCompressed()
+
+	fmt.Println(compressedPublicKey)
+}
+```
+
+How to recover a compressed public key:
+
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
+)
+
+func main() {
+	compressedPublicKey := "0252972572d465d016d4c501887b8df303eee3ed602c056b1eb09260dfa0da0ab2"
+	pubKey := publickey.FromCompressed(compressedPublicKey)
+
+	fmt.Println(pubKey.ToPem())
+}
 ```
 
 ### OpenSSL
@@ -177,6 +263,18 @@ func main() {
 	fmt.Println(signature.ToBase64())
 }
 
+```
+
+### Run unit tests
+
+```
+cd tests && go test -v -count=1 ./...
+```
+
+### Run benchmark
+
+```
+cd tests && go test -bench=. -benchmem
 ```
 
 [Stark Bank]: https://starkbank.com

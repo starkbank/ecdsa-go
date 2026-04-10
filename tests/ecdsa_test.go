@@ -16,9 +16,9 @@ func TestVerifyRightMessage(t *testing.T) {
 
 	message := "This is the right message"
 
-	signature := ecdsa.Sign(message, &privateKey)
+	sig := ecdsa.Sign(message, &privateKey)
 
-	if !ecdsa.Verify(message, signature, &publicKey) {
+	if !ecdsa.Verify(message, sig, &publicKey) {
 		t.Fatal("TestVerifyRightMessage returned false")
 	}
 }
@@ -30,12 +30,13 @@ func TestVerifyWrongMessage(t *testing.T) {
 	message1 := "This is the right message"
 	message2 := "This is the wrong message"
 
-	signature := ecdsa.Sign(message1, &privateKey)
+	sig := ecdsa.Sign(message1, &privateKey)
 
-	if ecdsa.Verify(message2, signature, &publicKey) {
+	if ecdsa.Verify(message2, sig, &publicKey) {
 		t.Fatal("TestVerifyWrongMessage returned true")
 	}
 }
+
 func TestZeroSignature(t *testing.T) {
 	privateKey := privatekey.New(curve.Secp256k1)
 	publicKey := privateKey.PublicKey()

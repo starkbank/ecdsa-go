@@ -5,7 +5,7 @@ import (
 	"math/big"
 
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/math"
+	ecmath "github.com/starkbank/ecdsa-go/v2/ellipticcurve/math"
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/publickey"
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/utils"
 )
@@ -15,23 +15,22 @@ type PrivateKey struct {
 	Secret *big.Int
 }
 
-func New(curve curve.CurveFp, secret ...*big.Int) PrivateKey {
+func New(c curve.CurveFp, secret ...*big.Int) PrivateKey {
 	if len(secret) > 0 {
-		privateKey := PrivateKey{
-			Curve:  curve,
+		return PrivateKey{
+			Curve:  c,
 			Secret: secret[0],
 		}
-		return privateKey
 	}
 
 	return PrivateKey{
-		Curve:  curve,
-		Secret: utils.Between(big.NewInt(1), new(big.Int).Sub(curve.N, big.NewInt(1))),
+		Curve:  c,
+		Secret: utils.Between(big.NewInt(1), new(big.Int).Sub(c.N, big.NewInt(1))),
 	}
 }
 
 func (obj PrivateKey) PublicKey() publickey.PublicKey {
-	publicPoint := math.Multiply(
+	publicPoint := ecmath.Multiply(
 		obj.Curve.G,
 		obj.Secret,
 		obj.Curve.N,
@@ -84,8 +83,8 @@ func FromDer(data []byte) PrivateKey {
 		))
 	}
 
-	curve := curve.CurveByOid(curveOid)
-	privateKey := FromString(secretHex, curve)
+	c := curve.GetByOid(curveOid)
+	privateKey := FromString(secretHex, c)
 
 	if privateKey.PublicKey().ToString(true) != publicKeyString {
 		panic("The public key described inside the private key file doesn't match the actual public key of the pair")
@@ -94,8 +93,8 @@ func FromDer(data []byte) PrivateKey {
 	return privateKey
 }
 
-func FromString(str string, curve curve.CurveFp) PrivateKey {
-	return New(curve, utils.IntFromHex(str))
+func FromString(str string, c curve.CurveFp) PrivateKey {
+	return New(c, utils.IntFromHex(str))
 }
 
 const toPemTemplate = `

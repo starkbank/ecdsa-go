@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
@@ -19,8 +18,8 @@ func TestDerConversion(t *testing.T) {
 	der := signature1.ToDer()
 	signature2 := signature.FromDer(der)
 
-	if !reflect.DeepEqual(signature1, signature2) {
-		t.Fatal("TestDerConversion returned false")
+	if signature1.R.Cmp(&signature2.R) != 0 || signature1.S.Cmp(&signature2.S) != 0 {
+		t.Fatal("TestDerConversion failed")
 	}
 }
 
@@ -33,7 +32,7 @@ func TestBase64Conversion(t *testing.T) {
 	base64 := signature1.ToBase64()
 	signature2 := signature.FromBase64(base64)
 
-	if !reflect.DeepEqual(signature1, signature2) {
-		t.Fatal("TestDerConversion returned false")
+	if signature1.R.Cmp(&signature2.R) != 0 || signature1.S.Cmp(&signature2.S) != 0 {
+		t.Fatal("TestBase64Conversion failed")
 	}
 }

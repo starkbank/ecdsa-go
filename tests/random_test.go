@@ -24,9 +24,9 @@ func TestMany(t *testing.T) {
 		message := "test"
 
 		signatureBase64 := ecdsa.Sign(message, &privateKey2).ToBase64()
-		signature := signature.FromBase64(signatureBase64)
+		sig := signature.FromBase64(signatureBase64)
 
-		if !ecdsa.Verify(message, signature, &publicKey2) {
+		if !ecdsa.Verify(message, sig, &publicKey2) {
 			t.Fatal("testMany returned false")
 		}
 	}
