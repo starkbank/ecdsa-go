@@ -29,8 +29,11 @@ func Sha512() hash.Hash {
 	return sha512.New()
 }
 
-// Rfc6979 generates deterministic nonce values per RFC 6979.
-// Returns a channel that yields *big.Int nonce candidates.
+// Rfc6979 generates nonce values per hedged RFC 6979: deterministic k derivation
+// with fresh random entropy mixed into K-init (RFC 6979 §3.6). Same message and
+// key yield different signatures, while preserving RFC 6979's protection against
+// RNG failures.
+// Returns a closure that yields *big.Int nonce candidates.
 func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, hashfunc HashFunc) func() *big.Int {
 	orderBitLen := N.BitLen()
 	orderByteLen := (orderBitLen + 7) / 8
@@ -49,6 +52,11 @@ func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, hashfunc HashFunc) f
 	}
 	hashOctets := ByteStringFromHex(hashHex)
 
+	extraEntropy := make([]byte, orderByteLen)
+	if _, err := rand.Read(extraEntropy); err != nil {
+		panic(err)
+	}
+
 	hLen := hashfunc().Size()
 	V := make([]byte, hLen)
 	for i := range V {
@@ -56,12 +64,13 @@ func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, hashfunc HashFunc) f
 	}
 	K := make([]byte, hLen)
 
-	// K = HMAC(K, V || 0x00 || secret || hash)
+	// K = HMAC(K, V || 0x00 || secret || hash || extraEntropy)
 	mac := hmac.New(hashfunc, K)
 	mac.Write(V)
 	mac.Write([]byte{0x00})
 	mac.Write(secretBytes)
 	mac.Write(hashOctets)
+	mac.Write(extraEntropy)
 	K = mac.Sum(nil)
 
 	// V = HMAC(K, V)
@@ -69,12 +78,13 @@ func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, hashfunc HashFunc) f
 	mac.Write(V)
 	V = mac.Sum(nil)
 
-	// K = HMAC(K, V || 0x01 || secret || hash)
+	// K = HMAC(K, V || 0x01 || secret || hash || extraEntropy)
 	mac = hmac.New(hashfunc, K)
 	mac.Write(V)
 	mac.Write([]byte{0x01})
 	mac.Write(secretBytes)
 	mac.Write(hashOctets)
+	mac.Write(extraEntropy)
 	K = mac.Sum(nil)
 
 	// V = HMAC(K, V)

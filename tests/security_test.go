@@ -16,18 +16,17 @@ import (
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/utils"
 )
 
-// ===================== RFC 6979 Known Answer Tests =====================
+// ===================== Prime256v1 Public Key Derivation Tests =====================
 
-// Test vectors from RFC 6979 Appendix A.2.5 (prime256v1/SHA-256).
-// The r values match the RFC exactly; s values are low-S normalized
-// (s = N - s when RFC s > N/2).
+// RFC 6979 A.2.5 public key derivation. Signatures are hedged, so r/s no longer
+// match fixed test vectors, but pubkey derivation is unchanged.
 
 func rfc6979PrivateKey() privatekey.PrivateKey {
 	secret, _ := new(big.Int).SetString("C9AFA9D845BA75166B5C215767B1D6934E50C3DB36E89B127B8A622B120F6721", 16)
 	return privatekey.New(curve.Prime256v1, secret)
 }
 
-func TestRfc6979PublicKeyMatchesRfc(t *testing.T) {
+func TestPublicKeyMatchesRfc(t *testing.T) {
 	pk := rfc6979PrivateKey()
 	pub := pk.PublicKey()
 
@@ -42,48 +41,37 @@ func TestRfc6979PublicKeyMatchesRfc(t *testing.T) {
 	}
 }
 
-func TestRfc6979SampleMessageSignature(t *testing.T) {
+func TestSampleMessageRoundTrip(t *testing.T) {
 	pk := rfc6979PrivateKey()
 	pub := pk.PublicKey()
 
 	sig := ecdsa.Sign("sample", &pk)
 
-	expectedR, _ := new(big.Int).SetString("EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716", 16)
-	// s is low-S normalized: N - original_s
-	expectedS, _ := new(big.Int).SetString("834E36AD29A83BF2BC9385E491D6099C8FDF9D1ED67AA7EA5F51F93782857A9", 16)
-
-	if sig.R.Cmp(expectedR) != 0 {
-		t.Fatalf("RFC 6979 sample r mismatch: got %x", &sig.R)
-	}
-	if sig.S.Cmp(expectedS) != 0 {
-		t.Fatalf("RFC 6979 sample s mismatch: got %x", &sig.S)
+	halfN := new(big.Int).Div(curve.Prime256v1.N, big.NewInt(2))
+	if sig.S.Cmp(halfN) > 0 {
+		t.Fatal("prime256v1 sample signature s > N/2")
 	}
 	if !ecdsa.Verify("sample", sig, &pub) {
-		t.Fatal("RFC 6979 sample signature verification failed")
+		t.Fatal("prime256v1 sample signature verification failed")
 	}
 }
 
-func TestRfc6979TestMessageSignature(t *testing.T) {
+func TestTestMessageRoundTrip(t *testing.T) {
 	pk := rfc6979PrivateKey()
 	pub := pk.PublicKey()
 
 	sig := ecdsa.Sign("test", &pk)
 
-	expectedR, _ := new(big.Int).SetString("F1ABB023518351CD71D881567B1EA663ED3EFCF6C5132B354F28D3B0B7D38367", 16)
-	expectedS, _ := new(big.Int).SetString("019F4113742A2B14BD25926B49C649155F267E60D3814B4C0CC84250E46F0083", 16)
-
-	if sig.R.Cmp(expectedR) != 0 {
-		t.Fatalf("RFC 6979 test r mismatch: got %x", &sig.R)
-	}
-	if sig.S.Cmp(expectedS) != 0 {
-		t.Fatalf("RFC 6979 test s mismatch: got %x", &sig.S)
+	halfN := new(big.Int).Div(curve.Prime256v1.N, big.NewInt(2))
+	if sig.S.Cmp(halfN) > 0 {
+		t.Fatal("prime256v1 test signature s > N/2")
 	}
 	if !ecdsa.Verify("test", sig, &pub) {
-		t.Fatal("RFC 6979 test signature verification failed")
+		t.Fatal("prime256v1 test signature verification failed")
 	}
 }
 
-// ===================== Secp256k1 Known Answer Tests =====================
+// ===================== Secp256k1 Public Key Derivation Tests =====================
 
 func secp256k1Secret1Key() privatekey.PrivateKey {
 	return privatekey.New(curve.Secp256k1, big.NewInt(1))
@@ -101,41 +89,23 @@ func TestSecp256k1PublicKeyIsGenerator(t *testing.T) {
 	}
 }
 
-func TestSecp256k1SampleMessageSignature(t *testing.T) {
+func TestSecp256k1SampleMessageRoundTrip(t *testing.T) {
 	pk := secp256k1Secret1Key()
 	pub := pk.PublicKey()
 
 	sig := ecdsa.Sign("sample", &pk)
 
-	expectedR, _ := new(big.Int).SetString("58DB657BCD631038BEA07B4941172F0167ACA98F12B55E3176BD1C35435D6501", 16)
-	expectedS, _ := new(big.Int).SetString("3A78E73D8FF8AB554E13C10F6390D81A882F91945D6275493882676170B53A57", 16)
-
-	if sig.R.Cmp(expectedR) != 0 {
-		t.Fatalf("secp256k1 sample r mismatch: got %x", &sig.R)
-	}
-	if sig.S.Cmp(expectedS) != 0 {
-		t.Fatalf("secp256k1 sample s mismatch: got %x", &sig.S)
-	}
 	if !ecdsa.Verify("sample", sig, &pub) {
 		t.Fatal("secp256k1 sample verification failed")
 	}
 }
 
-func TestSecp256k1TestMessageSignature(t *testing.T) {
+func TestSecp256k1TestMessageRoundTrip(t *testing.T) {
 	pk := secp256k1Secret1Key()
 	pub := pk.PublicKey()
 
 	sig := ecdsa.Sign("test", &pk)
 
-	expectedR, _ := new(big.Int).SetString("98DF3AAED18D1299109E9732E3015F7E68E5D1FDEAD6924809B410D970A3B0CE", 16)
-	expectedS, _ := new(big.Int).SetString("3EF15987C6592379BAAD6392586A382D63952572632FCD951AE75E7471C144C6", 16)
-
-	if sig.R.Cmp(expectedR) != 0 {
-		t.Fatalf("secp256k1 test r mismatch: got %x", &sig.R)
-	}
-	if sig.S.Cmp(expectedS) != 0 {
-		t.Fatalf("secp256k1 test s mismatch: got %x", &sig.S)
-	}
 	if !ecdsa.Verify("test", sig, &pub) {
 		t.Fatal("secp256k1 test verification failed")
 	}
@@ -295,17 +265,17 @@ func TestWrongKeyRejected(t *testing.T) {
 	}
 }
 
-// ===================== RFC 6979 Determinism Tests =====================
+// ===================== Hedged Signature Tests =====================
 
-func TestDeterministicSignature(t *testing.T) {
+func TestSameInputsProduceDifferentSignatures(t *testing.T) {
 	pk := privatekey.New(curve.Secp256k1)
 	message := "test message"
 
 	sig1 := ecdsa.Sign(message, &pk)
 	sig2 := ecdsa.Sign(message, &pk)
 
-	if sig1.R.Cmp(&sig2.R) != 0 || sig1.S.Cmp(&sig2.S) != 0 {
-		t.Fatal("Deterministic signatures differ for same message/key")
+	if sig1.R.Cmp(&sig2.R) == 0 && sig1.S.Cmp(&sig2.S) == 0 {
+		t.Fatal("Hedged signatures should differ for same message/key")
 	}
 }
 
@@ -585,15 +555,15 @@ func TestSignVerifyWithSha512(t *testing.T) {
 	}
 }
 
-func TestSha512DeterministicSignature(t *testing.T) {
+func TestSha512SignaturesAreHedged(t *testing.T) {
 	pk := privatekey.New(curve.Secp256k1)
 	message := "test message"
 
 	sig1 := ecdsa.Sign(message, &pk, utils.Sha512)
 	sig2 := ecdsa.Sign(message, &pk, utils.Sha512)
 
-	if sig1.R.Cmp(&sig2.R) != 0 || sig1.S.Cmp(&sig2.S) != 0 {
-		t.Fatal("SHA-512 deterministic signatures differ")
+	if sig1.R.Cmp(&sig2.R) == 0 && sig1.S.Cmp(&sig2.S) == 0 {
+		t.Fatal("SHA-512 hedged signatures should differ for same message/key")
 	}
 }
 
@@ -626,15 +596,15 @@ func TestPrime256v1SignVerify(t *testing.T) {
 	}
 }
 
-func TestPrime256v1DeterministicSignature(t *testing.T) {
+func TestPrime256v1SignaturesAreHedged(t *testing.T) {
 	pk := privatekey.New(curve.Prime256v1)
 	message := "test message"
 
 	sig1 := ecdsa.Sign(message, &pk)
 	sig2 := ecdsa.Sign(message, &pk)
 
-	if sig1.R.Cmp(&sig2.R) != 0 || sig1.S.Cmp(&sig2.S) != 0 {
-		t.Fatal("prime256v1 deterministic signatures differ")
+	if sig1.R.Cmp(&sig2.R) == 0 && sig1.S.Cmp(&sig2.S) == 0 {
+		t.Fatal("prime256v1 hedged signatures should differ for same message/key")
 	}
 }
 
