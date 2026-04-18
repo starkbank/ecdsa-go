@@ -15,14 +15,19 @@ import (
 )
 
 type CurveFp struct {
-	A        *big.Int
-	B        *big.Int
-	P        *big.Int
-	N        *big.Int
-	G        point.Point
-	Name     string
-	NistName string
-	Oid      []int64
+	A          *big.Int
+	B          *big.Int
+	P          *big.Int
+	N          *big.Int
+	G          point.Point
+	Name       string
+	NistName   string
+	Oid        []int64
+	NBitLength int
+
+	// GeneratorCache caches the precomputed 2^4-ary window table of G,
+	// populated lazily by ecmath.MultiplyGenerator.
+	GeneratorCache *ecmath.GeneratorCache
 }
 
 // Contains verifies if the point p is on the curve
@@ -76,14 +81,16 @@ func New(name string, AHex string, BHex string, PHex string, NHex string, GxHex 
 	Gy, _ := new(big.Int).SetString(GyHex, 0)
 
 	return CurveFp{
-		Name:     name,
-		NistName: nistName,
-		A:        A,
-		B:        B,
-		P:        P,
-		N:        N,
-		G:        point.Point{X: Gx, Y: Gy, Z: big.NewInt(0)},
-		Oid:      oid,
+		Name:           name,
+		NistName:       nistName,
+		A:              A,
+		B:              B,
+		P:              P,
+		N:              N,
+		G:              point.Point{X: Gx, Y: Gy, Z: big.NewInt(0)},
+		Oid:            oid,
+		NBitLength:     N.BitLen(),
+		GeneratorCache: &ecmath.GeneratorCache{},
 	}
 }
 

@@ -34,8 +34,7 @@ func Sha512() hash.Hash {
 // key yield different signatures, while preserving RFC 6979's protection against
 // RNG failures.
 // Returns a closure that yields *big.Int nonce candidates.
-func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, hashfunc HashFunc) func() *big.Int {
-	orderBitLen := N.BitLen()
+func Rfc6979(hashBytes []byte, secret *big.Int, N *big.Int, orderBitLen int, hashfunc HashFunc) func() *big.Int {
 	orderByteLen := (orderBitLen + 7) / 8
 
 	secretHex := HexFromInt(secret)

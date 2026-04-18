@@ -21,17 +21,25 @@ func Sign(message string, privateKey *privatekey.PrivateKey, hashfunc ...utils.H
 	byteMessage := h.Sum(nil)
 
 	curve := privateKey.Curve
-	numberMessage := utils.NumberFromByteString(byteMessage, curve.N.BitLen())
+	numberMessage := utils.NumberFromByteString(byteMessage, curve.NBitLength)
 
 	zero := big.NewInt(0)
 	r := big.NewInt(0)
 	s := big.NewInt(0)
 	var randSignPoint_X, randSignPoint_Y *big.Int
 
-	nextK := utils.Rfc6979(byteMessage, privateKey.Secret, curve.N, hf)
+	genParams := ecmath.MultiplyGeneratorParams{
+		G:          curve.G,
+		A:          curve.A,
+		P:          curve.P,
+		N:          curve.N,
+		NBitLength: curve.NBitLength,
+		Cache:      curve.GeneratorCache,
+	}
+	nextK := utils.Rfc6979(byteMessage, privateKey.Secret, curve.N, curve.NBitLength, hf)
 	for r.Cmp(zero) == 0 || s.Cmp(zero) == 0 {
 		randNum := nextK()
-		randSignPoint := ecmath.Multiply(curve.G, randNum, curve.N, curve.A, curve.P)
+		randSignPoint := ecmath.MultiplyGenerator(genParams, randNum)
 		randSignPoint_X = randSignPoint.X
 		randSignPoint_Y = randSignPoint.Y
 		r = new(big.Int).Mod(randSignPoint.X, curve.N)
@@ -69,7 +77,7 @@ func Verify(message string, sig signature.Signature, publicKey *publickey.Public
 	byteMessage := h.Sum(nil)
 
 	curve := publicKey.Curve
-	numberMessage := utils.NumberFromByteString(byteMessage, curve.N.BitLen())
+	numberMessage := utils.NumberFromByteString(byteMessage, curve.NBitLength)
 	r := &sig.R
 	s := &sig.S
 
