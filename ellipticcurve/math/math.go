@@ -11,6 +11,10 @@ import (
 // scalar multiplication for the curve generator.
 const generatorWindowBits = 4
 
+// one is a shared read-only *big.Int used for "is this value 1?" comparisons.
+// big.Int's Cmp does not mutate its operand, so sharing is safe.
+var one = big.NewInt(1)
+
 // GeneratorCache holds the precomputed 2^w-ary window table of a curve
 // generator G in Jacobian coordinates. It is populated lazily on the first
 // call to MultiplyGenerator and shared across copies of CurveFp via pointer.
@@ -310,7 +314,9 @@ func jacobianDouble(p point.Point, mode curveMode) point.Point {
 	return point.Point{X: nx, Y: ny, Z: nz}
 }
 
-// jacobianAdd adds two points in Jacobian coordinates
+// jacobianAdd adds two points in Jacobian coordinates. When qz == 1 (q is
+// affine) it takes a mixed-add fast path that saves four field multiplications
+// per call (no qz^2, simplified U1, S1, and nz).
 func jacobianAdd(p point.Point, q point.Point, mode curveMode) point.Point {
 	if p.Y.Sign() == 0 {
 		return q
@@ -323,20 +329,29 @@ func jacobianAdd(p point.Point, q point.Point, mode curveMode) point.Point {
 	px, py, pz := p.X, p.Y, p.Z
 	qx, qy, qz := q.X, q.Y, q.Z
 
-	qz2 := new(big.Int).Mul(qz, qz)
-	qz2.Mod(qz2, P)
 	pz2 := new(big.Int).Mul(pz, pz)
 	pz2.Mod(pz2, P)
 
-	U1 := new(big.Int).Mul(px, qz2)
-	U1.Mod(U1, P)
 	U2 := new(big.Int).Mul(qx, pz2)
 	U2.Mod(U2, P)
-
-	S1 := new(big.Int).Mul(py, qz2)
-	S1.Mul(S1, qz).Mod(S1, P)
 	S2 := new(big.Int).Mul(qy, pz2)
 	S2.Mul(S2, pz).Mod(S2, P)
+
+	qzIsOne := qz.Sign() != 0 && qz.Cmp(one) == 0
+
+	var U1, S1 *big.Int
+	if qzIsOne {
+		// Mixed affine+Jacobian add: qz^2 = qz^3 = 1 saves four multiplications.
+		U1 = new(big.Int).Set(px)
+		S1 = new(big.Int).Set(py)
+	} else {
+		qz2 := new(big.Int).Mul(qz, qz)
+		qz2.Mod(qz2, P)
+		U1 = new(big.Int).Mul(px, qz2)
+		U1.Mod(U1, P)
+		S1 = new(big.Int).Mul(py, qz2)
+		S1.Mul(S1, qz).Mod(S1, P)
+	}
 
 	if U1.Cmp(U2) == 0 {
 		if S1.Cmp(S2) != 0 {
@@ -361,8 +376,14 @@ func jacobianAdd(p point.Point, q point.Point, mode curveMode) point.Point {
 	ny.Mul(ny, R)
 	ny.Sub(ny, new(big.Int).Mul(S1, H3)).Mod(ny, P)
 
-	nz := new(big.Int).Mul(H, pz)
-	nz.Mul(nz, qz).Mod(nz, P)
+	var nz *big.Int
+	if qzIsOne {
+		nz = new(big.Int).Mul(H, pz)
+		nz.Mod(nz, P)
+	} else {
+		nz = new(big.Int).Mul(H, pz)
+		nz.Mul(nz, qz).Mod(nz, P)
+	}
 
 	return point.Point{X: nx, Y: ny, Z: nz}
 }
