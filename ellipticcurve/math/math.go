@@ -438,7 +438,9 @@ func jacobianMultiply(p point.Point, n *big.Int, N *big.Int, mode curveMode) poi
 	return r0
 }
 
-// shamirMultiply computes n1*p1 + n2*p2 using Shamir's trick (simultaneous double-and-add).
+// shamirMultiply computes n1*p1 + n2*p2 using Shamir's trick with Joint
+// Sparse Form (Solinas 2001). JSF picks signed digits in {-1, 0, 1} so at
+// most ~l/2 digit pairs are non-zero, versus ~3l/4 for the raw binary form.
 // Not constant-time -- use only with public scalars (e.g. verification).
 func shamirMultiply(jp1 point.Point, n1 *big.Int, jp2 point.Point, n2 *big.Int, N *big.Int, mode curveMode) point.Point {
 	if n1.Sign() < 0 || n1.Cmp(N) >= 0 {
@@ -448,29 +450,121 @@ func shamirMultiply(jp1 point.Point, n1 *big.Int, jp2 point.Point, n2 *big.Int, 
 		n2 = new(big.Int).Mod(n2, N)
 	}
 
-	jp1p2 := jacobianAdd(jp1, jp2, mode)
-
-	l := n1.BitLen()
-	if n2.BitLen() > l {
-		l = n2.BitLen()
+	if n1.Sign() == 0 && n2.Sign() == 0 {
+		return point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
 	}
 
-	r := point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
-
-	for i := l - 1; i >= 0; i-- {
-		r = jacobianDouble(r, mode)
-		b1 := n1.Bit(i)
-		b2 := n2.Bit(i)
-		if b1 == 1 {
-			if b2 == 1 {
-				r = jacobianAdd(r, jp1p2, mode)
-			} else {
-				r = jacobianAdd(r, jp1, mode)
-			}
-		} else if b2 == 1 {
-			r = jacobianAdd(r, jp2, mode)
+	P := mode.P
+	neg := func(pt point.Point) point.Point {
+		var ny *big.Int
+		if pt.Y.Sign() == 0 {
+			ny = big.NewInt(0)
+		} else {
+			ny = new(big.Int).Sub(P, pt.Y)
+		}
+		return point.Point{
+			X: new(big.Int).Set(pt.X),
+			Y: ny,
+			Z: new(big.Int).Set(pt.Z),
 		}
 	}
 
+	jp1p2 := jacobianAdd(jp1, jp2, mode)
+	jp1mp2 := jacobianAdd(jp1, neg(jp2), mode)
+	negJp1 := neg(jp1)
+	negJp2 := neg(jp2)
+	negJp1p2 := neg(jp1p2)
+	negJp1mp2 := neg(jp1mp2)
+
+	digits := jsfDigits(n1, n2)
+	r := point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
+	for _, d := range digits {
+		r = jacobianDouble(r, mode)
+		u0, u1 := d[0], d[1]
+		if u0 == 0 && u1 == 0 {
+			continue
+		}
+		var addend point.Point
+		switch {
+		case u0 == 1 && u1 == 0:
+			addend = jp1
+		case u0 == -1 && u1 == 0:
+			addend = negJp1
+		case u0 == 0 && u1 == 1:
+			addend = jp2
+		case u0 == 0 && u1 == -1:
+			addend = negJp2
+		case u0 == 1 && u1 == 1:
+			addend = jp1p2
+		case u0 == -1 && u1 == -1:
+			addend = negJp1p2
+		case u0 == 1 && u1 == -1:
+			addend = jp1mp2
+		case u0 == -1 && u1 == 1:
+			addend = negJp1mp2
+		}
+		r = jacobianAdd(r, addend, mode)
+	}
+
 	return r
+}
+
+// jsfDigits returns the Joint Sparse Form of (k0, k1): list of signed-digit
+// pairs [u0, u1] in {-1, 0, 1}, ordered MSB-first. At most one of any two
+// consecutive pairs is non-zero, giving density ~1/2 instead of ~3/4 from
+// raw binary.
+func jsfDigits(k0 *big.Int, k1 *big.Int) [][2]int {
+	k0 = new(big.Int).Set(k0)
+	k1 = new(big.Int).Set(k1)
+	d0 := 0
+	d1 := 0
+	digits := make([][2]int, 0, k0.BitLen()+2)
+	for {
+		// loop while (k0 + d0) != 0 or (k1 + d1) != 0
+		if k0.Sign() == 0 && d0 == 0 && k1.Sign() == 0 && d1 == 0 {
+			break
+		}
+		// a0 = k0 + d0 (only low 3 bits matter)
+		a0Low := int(k0.Bit(0)) | (int(k0.Bit(1)) << 1) | (int(k0.Bit(2)) << 2)
+		a0Low = (a0Low + d0) & 7
+		a1Low := int(k1.Bit(0)) | (int(k1.Bit(1)) << 1) | (int(k1.Bit(2)) << 2)
+		a1Low = (a1Low + d1) & 7
+
+		var u0 int
+		if a0Low&1 == 1 {
+			if a0Low&3 == 1 {
+				u0 = 1
+			} else {
+				u0 = -1
+			}
+			if (a0Low&7 == 3 || a0Low&7 == 5) && a1Low&3 == 2 {
+				u0 = -u0
+			}
+		}
+		var u1 int
+		if a1Low&1 == 1 {
+			if a1Low&3 == 1 {
+				u1 = 1
+			} else {
+				u1 = -1
+			}
+			if (a1Low&7 == 3 || a1Low&7 == 5) && a0Low&3 == 2 {
+				u1 = -u1
+			}
+		}
+		digits = append(digits, [2]int{u0, u1})
+		if 2*d0 == 1+u0 {
+			d0 = 1 - d0
+		}
+		if 2*d1 == 1+u1 {
+			d1 = 1 - d1
+		}
+		k0.Rsh(k0, 1)
+		k1.Rsh(k1, 1)
+	}
+	// reverse
+	for i, j := 0, len(digits)-1; i < j; i, j = i+1, j-1 {
+		digits[i], digits[j] = digits[j], digits[i]
+	}
+	return digits
 }
