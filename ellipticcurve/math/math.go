@@ -7,17 +7,14 @@ import (
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/point"
 )
 
-// generatorWindowBits is the window size used by the fixed-base 2^w-ary
-// scalar multiplication for the curve generator.
-const generatorWindowBits = 4
-
 // one is a shared read-only *big.Int used for "is this value 1?" comparisons.
 // big.Int's Cmp does not mutate its operand, so sharing is safe.
 var one = big.NewInt(1)
 
-// GeneratorCache holds the precomputed 2^w-ary window table of a curve
-// generator G in Jacobian coordinates. It is populated lazily on the first
-// call to MultiplyGenerator and shared across copies of CurveFp via pointer.
+// GeneratorCache holds the precomputed affine table [G, 2G, 4G, ...,
+// 2^nBitLength * G] used by the NAF fixed-base scalar multiplication. It
+// is populated lazily on the first call to MultiplyGenerator and shared
+// across copies of CurveFp via pointer.
 type GeneratorCache struct {
 	Once  sync.Once
 	Table []point.Point
@@ -155,9 +152,11 @@ type MultiplyGeneratorParams struct {
 	Cache      *GeneratorCache
 }
 
-// MultiplyGenerator computes n*G using a precomputed window table
-// (2^4-ary method). Roughly 2-3x faster than variable-base multiplication
-// because doublings stay cheap and additions use pre-stored multiples of G.
+// MultiplyGenerator computes n*G using a precomputed affine table of
+// powers-of-two multiples of G and the width-2 NAF of n. Every non-zero NAF
+// digit triggers one mixed add and zero doublings, trading the ~256
+// doublings of a windowed method for ~86 adds on average -- a large net
+// reduction in field multiplications for 256-bit scalars.
 func MultiplyGenerator(params MultiplyGeneratorParams, n *big.Int) point.Point {
 	if n.Sign() < 0 || n.Cmp(params.N) >= 0 {
 		n = new(big.Int).Mod(n, params.N)
@@ -168,48 +167,67 @@ func MultiplyGenerator(params MultiplyGeneratorParams, n *big.Int) point.Point {
 
 	mode := newCurveMode(params.A, params.P)
 	table := generatorTable(params, mode)
-	w := generatorWindowBits
-	mask := uint((1 << w) - 1)
+	P := params.P
 
-	// Jacobian infinity: y=0 triggers the early-return in jacobianAdd.
+	// Work on a fresh copy of n since we mutate it bit-by-bit.
+	k := new(big.Int).Set(n)
 	r := point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
-	startBit := ((params.NBitLength - 1) / w) * w
-	for bit := startBit; bit >= 0; bit -= w {
-		for i := 0; i < w; i++ {
-			r = jacobianDouble(r, mode)
+	i := 0
+	for k.Sign() > 0 {
+		if k.Bit(0) == 1 {
+			// digit = 2 - (k & 3), yielding +1 or -1.
+			low2 := int(k.Bit(0)) | (int(k.Bit(1)) << 1)
+			digit := 2 - low2
+			if digit == 1 {
+				k.Sub(k, one)
+				r = jacobianAdd(r, table[i], mode)
+			} else {
+				k.Add(k, one)
+				g := table[i]
+				neg := point.Point{
+					X: new(big.Int).Set(g.X),
+					Y: new(big.Int).Sub(P, g.Y),
+					Z: new(big.Int).Set(g.Z),
+				}
+				r = jacobianAdd(r, neg, mode)
+			}
 		}
-		window := extractWindow(n, bit, w, mask)
-		if window != 0 {
-			r = jacobianAdd(r, table[window], mode)
-		}
+		k.Rsh(k, 1)
+		i++
 	}
 	return fromJacobian(r, params.P)
-}
-
-func extractWindow(n *big.Int, bit int, w int, mask uint) uint {
-	var window uint
-	for i := 0; i < w; i++ {
-		window |= uint(n.Bit(bit+i)) << uint(i)
-	}
-	return window & mask
 }
 
 func generatorTable(params MultiplyGeneratorParams, mode curveMode) []point.Point {
 	cache := params.Cache
 	cache.Once.Do(func() {
-		w := generatorWindowBits
-		size := 1 << w
-		table := make([]point.Point, size)
-		// table[0] = point at infinity (Jacobian, y=0 triggers early-return)
-		table[0] = point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
-		G := point.Point{
+		P := params.P
+		// NAF of an nBitLength-bit scalar can be up to nBitLength+1 digits.
+		size := params.NBitLength + 1
+		table := make([]point.Point, 0, size)
+		current := point.Point{
 			X: new(big.Int).Set(params.G.X),
 			Y: new(big.Int).Set(params.G.Y),
 			Z: big.NewInt(1),
 		}
-		table[1] = G
-		for i := 2; i < size; i++ {
-			table[i] = jacobianAdd(table[i-1], G, mode)
+		table = append(table, current)
+		for j := 0; j < params.NBitLength; j++ {
+			doubled := jacobianDouble(current, mode)
+			if doubled.Y.Sign() == 0 {
+				current = doubled
+			} else {
+				zInv := Inv(doubled.Z, P)
+				zInv2 := new(big.Int).Mul(zInv, zInv)
+				zInv2.Mod(zInv2, P)
+				zInv3 := new(big.Int).Mul(zInv2, zInv)
+				zInv3.Mod(zInv3, P)
+				x := new(big.Int).Mul(doubled.X, zInv2)
+				x.Mod(x, P)
+				y := new(big.Int).Mul(doubled.Y, zInv3)
+				y.Mod(y, P)
+				current = point.Point{X: x, Y: y, Z: big.NewInt(1)}
+			}
+			table = append(table, current)
 		}
 		cache.Table = table
 	})
