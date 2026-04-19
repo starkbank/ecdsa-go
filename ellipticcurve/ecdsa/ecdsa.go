@@ -103,7 +103,7 @@ func Verify(message string, sig signature.Signature, publicKey *publickey.Public
 	u2 := new(big.Int).Mul(r, inv)
 	u2.Mod(u2, curve.N)
 
-	v := ecmath.MultiplyAndAdd(curve.G, u1, publicKey.Point, u2, curve.N, curve.A, curve.P)
+	v := ecmath.MultiplyAndAddWithGLV(curve.G, u1, publicKey.Point, u2, curve.N, curve.A, curve.P, curve.GLVParams)
 	if v.IsAtInfinity() {
 		return false
 	}

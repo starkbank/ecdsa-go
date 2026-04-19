@@ -126,10 +126,33 @@ func Add(p point.Point, q point.Point, A *big.Int, P *big.Int) point.Point {
 	return fromJacobian(jacobianAdd(toJacobian(p), toJacobian(q), mode), P)
 }
 
-// MultiplyAndAdd computes n1*p1 + n2*p2 using Shamir's trick (simultaneous double-and-add).
+// GLVParams holds the GLV endomorphism basis for curves that admit one
+// (e.g. secp256k1). Passing a non-nil pointer to MultiplyAndAddWithGLV
+// enables the 4-scalar simultaneous-exponentiation path; otherwise the
+// function falls back to Shamir's trick with JSF.
+type GLVParams struct {
+	Beta *big.Int
+	A1   *big.Int
+	B1   *big.Int
+	A2   *big.Int
+	B2   *big.Int
+}
+
+// MultiplyAndAdd computes n1*p1 + n2*p2 using Shamir's trick (JSF).
 // Not constant-time -- use only with public scalars (e.g. verification).
 func MultiplyAndAdd(p1 point.Point, n1 *big.Int, p2 point.Point, n2 *big.Int, N *big.Int, A *big.Int, P *big.Int) point.Point {
+	return MultiplyAndAddWithGLV(p1, n1, p2, n2, N, A, P, nil)
+}
+
+// MultiplyAndAddWithGLV computes n1*p1 + n2*p2. When glv is non-nil, uses
+// the GLV endomorphism to split each scalar into two ~128-bit halves and
+// runs a 4-scalar simultaneous double-and-add. Otherwise it falls back to
+// Shamir's trick with JSF. Not constant-time.
+func MultiplyAndAddWithGLV(p1 point.Point, n1 *big.Int, p2 point.Point, n2 *big.Int, N *big.Int, A *big.Int, P *big.Int, glv *GLVParams) point.Point {
 	mode := newCurveMode(A, P)
+	if glv != nil {
+		return glvMultiplyAndAdd(p1, n1, p2, n2, N, mode, glv)
+	}
 	return fromJacobian(
 		shamirMultiply(
 			toJacobian(p1), n1,
@@ -137,6 +160,131 @@ func MultiplyAndAdd(p1 point.Point, n1 *big.Int, p2 point.Point, n2 *big.Int, N 
 			N, mode,
 		), P,
 	)
+}
+
+// glvMultiplyAndAdd computes n1*p1 + n2*p2 using the GLV endomorphism.
+// Splits each 256-bit scalar into two ~128-bit scalars via k = k1 + k2*lambda
+// (mod N), then runs a 4-scalar simultaneous double-and-add over
+// (p1, phi(p1), p2, phi(p2)) with a 16-entry precomputed table of subset
+// sums. Halves the loop length versus the plain Shamir path.
+func glvMultiplyAndAdd(p1 point.Point, n1 *big.Int, p2 point.Point, n2 *big.Int, N *big.Int, mode curveMode, glv *GLVParams) point.Point {
+	P := mode.P
+	beta := glv.Beta
+
+	n1Mod := new(big.Int).Mod(n1, N)
+	n2Mod := new(big.Int).Mod(n2, N)
+	k1, k2 := glvDecompose(n1Mod, glv, N)
+	k3, k4 := glvDecompose(n2Mod, glv, N)
+
+	// Base points (affine, z=1); phi((x, y)) = (beta*x mod P, y).
+	betaP1x := new(big.Int).Mul(beta, p1.X)
+	betaP1x.Mod(betaP1x, P)
+	betaP2x := new(big.Int).Mul(beta, p2.X)
+	betaP2x.Mod(betaP2x, P)
+
+	bases := [4]point.Point{
+		{X: new(big.Int).Set(p1.X), Y: new(big.Int).Set(p1.Y), Z: big.NewInt(1)},
+		{X: betaP1x, Y: new(big.Int).Set(p1.Y), Z: big.NewInt(1)},
+		{X: new(big.Int).Set(p2.X), Y: new(big.Int).Set(p2.Y), Z: big.NewInt(1)},
+		{X: betaP2x, Y: new(big.Int).Set(p2.Y), Z: big.NewInt(1)},
+	}
+	scalars := [4]*big.Int{k1, k2, k3, k4}
+	for i := 0; i < 4; i++ {
+		if scalars[i].Sign() < 0 {
+			scalars[i] = new(big.Int).Neg(scalars[i])
+			y := bases[i].Y
+			var ny *big.Int
+			if y.Sign() == 0 {
+				ny = big.NewInt(0)
+			} else {
+				ny = new(big.Int).Sub(P, y)
+			}
+			bases[i] = point.Point{
+				X: bases[i].X,
+				Y: ny,
+				Z: bases[i].Z,
+			}
+		}
+	}
+
+	// Precompute table[idx] = sum of bases[i] selected by bits of idx.
+	table := make([]point.Point, 16)
+	for i := range table {
+		table[i] = point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
+	}
+	for idx := 1; idx < 16; idx++ {
+		low := idx & -idx
+		// log2(low)
+		bitIdx := 0
+		for (1 << bitIdx) != low {
+			bitIdx++
+		}
+		table[idx] = jacobianAdd(table[idx^low], bases[bitIdx], mode)
+	}
+
+	maxLen := 0
+	for _, s := range scalars {
+		if s.BitLen() > maxLen {
+			maxLen = s.BitLen()
+		}
+	}
+	r := point.Point{X: big.NewInt(0), Y: big.NewInt(0), Z: big.NewInt(1)}
+	for bit := maxLen - 1; bit >= 0; bit-- {
+		r = jacobianDouble(r, mode)
+		idx := int(scalars[0].Bit(bit)) |
+			(int(scalars[1].Bit(bit)) << 1) |
+			(int(scalars[2].Bit(bit)) << 2) |
+			(int(scalars[3].Bit(bit)) << 3)
+		if idx != 0 {
+			r = jacobianAdd(r, table[idx], mode)
+		}
+	}
+
+	return fromJacobian(r, P)
+}
+
+// glvDecompose decomposes k into (k1, k2) with k = k1 + k2*lambda (mod N)
+// and |k1|, |k2| ~ sqrt(N). Babai rounding against the precomputed basis
+// {(a1, b1), (a2, b2)}; k1 and k2 may be negative.
+func glvDecompose(k *big.Int, glv *GLVParams, N *big.Int) (*big.Int, *big.Int) {
+	halfN := new(big.Int).Rsh(N, 1)
+	// c1 = (b2 * k + halfN) // N
+	c1 := new(big.Int).Mul(glv.B2, k)
+	c1.Add(c1, halfN)
+	// Python's // is floor division. Since b2*k + halfN may be negative
+	// (if b2 is negative), use Euclidean/floored division to match.
+	c1 = floorDiv(c1, N)
+	// c2 = (-b1 * k + halfN) // N
+	c2 := new(big.Int).Neg(glv.B1)
+	c2.Mul(c2, k)
+	c2.Add(c2, halfN)
+	c2 = floorDiv(c2, N)
+	// k1 = k - c1*a1 - c2*a2
+	k1 := new(big.Int).Set(k)
+	tmp := new(big.Int).Mul(c1, glv.A1)
+	k1.Sub(k1, tmp)
+	tmp.Mul(c2, glv.A2)
+	k1.Sub(k1, tmp)
+	// k2 = -c1*b1 - c2*b2
+	k2 := new(big.Int).Mul(c1, glv.B1)
+	k2.Neg(k2)
+	tmp.Mul(c2, glv.B2)
+	k2.Sub(k2, tmp)
+	return k1, k2
+}
+
+// floorDiv returns a // b with floor semantics (matches Python's // for
+// big ints, unlike big.Int.Quo which truncates toward zero).
+func floorDiv(a, b *big.Int) *big.Int {
+	q := new(big.Int)
+	m := new(big.Int)
+	q.QuoRem(a, b, m)
+	// If remainder sign differs from divisor sign and remainder is non-zero,
+	// subtract 1 to floor.
+	if m.Sign() != 0 && ((m.Sign() < 0) != (b.Sign() < 0)) {
+		q.Sub(q, one)
+	}
+	return q
 }
 
 // MultiplyGeneratorParams bundles the curve parameters required for fast

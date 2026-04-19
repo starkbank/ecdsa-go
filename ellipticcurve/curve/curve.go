@@ -25,9 +25,14 @@ type CurveFp struct {
 	Oid        []int64
 	NBitLength int
 
-	// GeneratorCache caches the precomputed 2^4-ary window table of G,
-	// populated lazily by ecmath.MultiplyGenerator.
+	// GeneratorCache caches the precomputed NAF table of G, populated
+	// lazily by ecmath.MultiplyGenerator.
 	GeneratorCache *ecmath.GeneratorCache
+
+	// GLVParams holds the GLV endomorphism basis when the curve supports
+	// one (e.g. secp256k1). nil for curves without an efficient
+	// endomorphism (e.g. prime256v1); those fall back to Shamir+JSF.
+	GLVParams *ecmath.GLVParams
 }
 
 // Contains verifies if the point p is on the curve
@@ -73,6 +78,12 @@ func (obj CurveFp) Y(x *big.Int, isEven bool) *big.Int {
 }
 
 func New(name string, AHex string, BHex string, PHex string, NHex string, GxHex string, GyHex string, oid []int64, nistName string) CurveFp {
+	return NewWithGLV(name, AHex, BHex, PHex, NHex, GxHex, GyHex, oid, nistName, nil)
+}
+
+// NewWithGLV is like New but also sets the GLV endomorphism parameters for
+// curves that support one (e.g. secp256k1). Pass nil for curves without.
+func NewWithGLV(name string, AHex string, BHex string, PHex string, NHex string, GxHex string, GyHex string, oid []int64, nistName string, glv *ecmath.GLVParams) CurveFp {
 	A, _ := new(big.Int).SetString(AHex, 0)
 	B, _ := new(big.Int).SetString(BHex, 0)
 	P, _ := new(big.Int).SetString(PHex, 0)
@@ -91,10 +102,28 @@ func New(name string, AHex string, BHex string, PHex string, NHex string, GxHex 
 		Oid:            oid,
 		NBitLength:     N.BitLen(),
 		GeneratorCache: &ecmath.GeneratorCache{},
+		GLVParams:      glv,
 	}
 }
 
-var Secp256k1 = New(
+func hexBig(s string) *big.Int {
+	v, _ := new(big.Int).SetString(s, 0)
+	return v
+}
+
+// secp256k1GLVParams: GLV endomorphism phi((x,y)) = (beta*x, y), equivalent
+// to lambda*P. Basis vectors from Gauss reduction; used to split a 256-bit
+// scalar k into two ~128-bit scalars (k1, k2) with k = k1 + k2*lambda (mod N).
+// Constants verbatim from the Python reference (ecdsa-python/curve.py).
+var secp256k1GLVParams = &ecmath.GLVParams{
+	Beta: hexBig("0x7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee"),
+	A1:   hexBig("0x3086d221a7d46bcde86c90e49284eb15"),
+	B1:   new(big.Int).Neg(hexBig("0xe4437ed6010e88286f547fa90abfe4c3")),
+	A2:   hexBig("0x114ca50f7a8e2f3f657c1108d9d44cfd8"),
+	B2:   hexBig("0x3086d221a7d46bcde86c90e49284eb15"),
+}
+
+var Secp256k1 = NewWithGLV(
 	"secp256k1",
 	"0x0000000000000000000000000000000000000000000000000000000000000000",
 	"0x0000000000000000000000000000000000000000000000000000000000000007",
@@ -104,6 +133,7 @@ var Secp256k1 = New(
 	"0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
 	[]int64{1, 3, 132, 0, 10},
 	"",
+	secp256k1GLVParams,
 )
 
 var Prime256v1 = New(
