@@ -19,5 +19,5 @@ func CreatePem(content string, template string) string {
 		}
 		lines = append(lines, content[start:end])
 	}
-	return strings.Replace(template, "{content}", strings.Join(lines[:], ""), -1)
+	return strings.Replace(template, "{content}", strings.Join(lines[:], "\n"), -1)
 }

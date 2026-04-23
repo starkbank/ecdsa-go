@@ -5,7 +5,7 @@ import (
 	"math/big"
 
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/curve"
-	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/math"
+	ecmath "github.com/starkbank/ecdsa-go/v2/ellipticcurve/math"
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/point"
 	"github.com/starkbank/ecdsa-go/v2/ellipticcurve/utils"
 )
@@ -17,14 +17,23 @@ type PublicKey struct {
 
 func (obj PublicKey) ToString(encoded bool) string {
 	baseLength := 2 * obj.Curve.Length()
-	stringTemplate := fmt.Sprint("%0", baseLength, "s")
-	xHex := fmt.Sprintf(stringTemplate, utils.HexFromInt(obj.Point.X))
-	yHex := fmt.Sprintf(stringTemplate, utils.HexFromInt(obj.Point.Y))
-	str := fmt.Sprint(xHex, yHex)
+	xHex := fmt.Sprintf("%0*s", baseLength, utils.HexFromInt(obj.Point.X))
+	yHex := fmt.Sprintf("%0*s", baseLength, utils.HexFromInt(obj.Point.Y))
+	str := xHex + yHex
 	if encoded {
-		return fmt.Sprint("0004", str)
+		return "0004" + str
 	}
 	return str
+}
+
+func (obj PublicKey) ToCompressed() string {
+	baseLength := 2 * obj.Curve.Length()
+	parityTag := _evenTag
+	if new(big.Int).Mod(obj.Point.Y, big.NewInt(2)).Cmp(big.NewInt(0)) != 0 {
+		parityTag = _oddTag
+	}
+	xHex := fmt.Sprintf("%0*s", baseLength, utils.HexFromInt(obj.Point.X))
+	return parityTag + xHex
 }
 
 func (obj PublicKey) ToDer() []byte {
@@ -63,12 +72,12 @@ func FromDer(data []byte) PublicKey {
 			publicKeyOid,
 		))
 	}
-	curve := curve.CurveByOid(curveOid)
-	return FromString(pointString, curve, true)
+	c := curve.GetByOid(curveOid)
+	return FromString(pointString, c, true)
 }
 
-func FromString(str string, curve curve.CurveFp, validatePoint bool) PublicKey {
-	baseLength := 2 * curve.Length()
+func FromString(str string, c curve.CurveFp, validatePoint bool) PublicKey {
+	baseLength := 2 * c.Length()
 	if len(str) > 2*baseLength && str[:4] == "0004" {
 		str = str[4:]
 	}
@@ -80,7 +89,7 @@ func FromString(str string, curve curve.CurveFp, validatePoint bool) PublicKey {
 
 	publicKey := PublicKey{
 		Point: publicPoint,
-		Curve: curve,
+		Curve: c,
 	}
 
 	if !validatePoint {
@@ -89,24 +98,46 @@ func FromString(str string, curve curve.CurveFp, validatePoint bool) PublicKey {
 	if publicPoint.IsAtInfinity() {
 		panic("Public Key point is at infinity")
 	}
-	if !curve.Contains(publicPoint) {
+	if !c.Contains(publicPoint) {
 		panic(fmt.Sprintf(
 			"Point (%v,%v) is not valid for curve %v",
 			publicPoint.X,
 			publicPoint.Y,
-			curve.Name,
+			c.Name,
 		))
 	}
-	if !math.Multiply(publicPoint, curve.N, curve.N, curve.A, curve.P).IsAtInfinity() {
+	if !ecmath.Multiply(publicPoint, c.N, c.N, c.A, c.P).IsAtInfinity() {
 		panic(fmt.Sprintf(
 			"Point (%v,%v) * %v.N is not at infinity",
 			publicPoint.X,
 			publicPoint.Y,
-			curve.Name,
+			c.Name,
 		))
 	}
 	return publicKey
 }
+
+func FromCompressed(str string, c ...curve.CurveFp) PublicKey {
+	curv := curve.Secp256k1
+	if len(c) > 0 {
+		curv = c[0]
+	}
+
+	parityTag := str[:2]
+	xHex := str[2:]
+	if parityTag != _evenTag && parityTag != _oddTag {
+		panic("Compressed string should start with 02 or 03")
+	}
+	x := utils.IntFromHex(xHex)
+	y := curv.Y(x, parityTag == _evenTag)
+	return PublicKey{
+		Point: point.Point{X: x, Y: y, Z: big.NewInt(0)},
+		Curve: curv,
+	}
+}
+
+const _evenTag = "02"
+const _oddTag = "03"
 
 var _ecdsaPublicKeyOid = []int64{1, 2, 840, 10045, 2, 1}
 

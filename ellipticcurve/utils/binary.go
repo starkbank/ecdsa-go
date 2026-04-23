@@ -8,8 +8,14 @@ import (
 	"strconv"
 )
 
-func NumberFromByteString(data []byte) *big.Int {
+func NumberFromByteString(data []byte, bitLength ...int) *big.Int {
 	ans, _ := new(big.Int).SetString(hex.EncodeToString(data), 16)
+	if len(bitLength) > 0 && bitLength[0] > 0 {
+		hashBitLen := len(data) * 8
+		if hashBitLen > bitLength[0] {
+			ans.Rsh(ans, uint(hashBitLen-bitLength[0]))
+		}
+	}
 	return ans
 }
 
@@ -33,7 +39,7 @@ func BitsFromHex(hexadecimal string) string {
 }
 
 func ByteStringFromBase64(base64 string) []byte {
-	bytes, _ := b64.StdEncoding.DecodeString((base64))
+	bytes, _ := b64.StdEncoding.DecodeString(base64)
 	return bytes
 }
 
